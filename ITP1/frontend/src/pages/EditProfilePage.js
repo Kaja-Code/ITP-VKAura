@@ -57,10 +57,11 @@ const ProfilePage = () => {
     data.append('file', file);
     data.append('upload_preset', 'vkaura');
 
+
     try {
       setUploading(true);
       const response = await axios.post(
-        'https://api.cloudinary.com/v1_1/dsi3mcpie/upload',
+        'https://api.cloudinary.com/v1_1/dsmym0pau/image/upload',
         data
       );
       setUploading(false);

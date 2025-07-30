@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../hooks/useAuth';
-import { useNavigate } from 'react-router-dom'; 
+import { useNavigate } from 'react-router-dom';
 import UserComponent from "../Component/Usercomponent";
 import {
   FaFacebook,
@@ -12,35 +12,43 @@ import {
 import "./OrderHistory.css";
 
 const UserBookingList = () => {
+  const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const { user, loading: authLoading } = useAuth();
-  const navigate = useNavigate();
+
+  // 1) Redirect to /login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate('/login');
+    }
+  }, [authLoading, user, navigate]);
+
+  // 2) Before any request, set the Authorization header
+  useEffect(() => {
+    if (user) {
+      const token = localStorage.getItem('token');
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
+      fetchBookings();
+    }
+  }, [user]);
 
   const fetchBookings = async () => {
-    if (!user) {
-      setError('Please log in to view your bookings.');
-      return;
-    }
     setLoading(true);
     try {
       const res = await axios.get('http://localhost:5000/api/bookings/user');
       setBookings(res.data);
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
       setError('Failed to fetch bookings.');
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (!authLoading) {
-      fetchBookings();
-    }
-  }, [authLoading, user]);
 
   const cancelBooking = async (id) => {
     try {

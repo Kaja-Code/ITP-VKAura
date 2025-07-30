@@ -1,83 +1,96 @@
+// controllers/bookingController.js
 import Booking from '../models/Booking.js';
 import Priest from '../models/Priest.js';
 
+// POST /api/bookings
 export const bookPriest = async (req, res) => {
   try {
     const { priestId, event, date } = req.body;
-    // Use authenticated user ID if available
-    const userId = req.user && req.user.userId ? req.user.userId : '000000000000000000000000';
+    const userId = req.user._id;        // ← real user ID
 
     const priest = await Priest.findById(priestId);
-    if (!priest) return res.status(404).json({ error: 'Priest not found' });
+    if (!priest) return res.status(404).json({ message: 'Priest not found' });
 
     const eventDate = new Date(date);
     const now = new Date();
-    const sevenDaysFromNow = new Date(now);
-    const twoMonthsFromNow = new Date(now);
+    const sevenDays = new Date(now);
+    const twoMonths = new Date(now);
+    sevenDays.setDate(now.getDate() + 7);
+    twoMonths.setMonth(now.getMonth() + 2);
 
-    twoMonthsFromNow.setMonth(now.getMonth() + 2);
-    sevenDaysFromNow.setDate(now.getDate() + 7);
+    if (eventDate < sevenDays)
+      return res.status(400).json({ message: 'Must book ≥7 days in advance' });
+    if (eventDate > twoMonths)
+      return res.status(400).json({ message: 'Cannot book >2 months out' });
 
-    if (eventDate < sevenDaysFromNow) {
-      return res.status(400).json({ error: 'Events must be booked at least 7 days in advance' });
-    }
-    if (eventDate > twoMonthsFromNow) {
-      return res.status(400).json({ error: 'Events cannot be booked more than 2 months in advance' });
-    }
-
-    // Compare dates in ISO format
-    const normalizedRequestedDate = eventDate.toISOString();
-    const isUnavailable = priest.unavailableDates.some(d => new Date(d).toISOString() === normalizedRequestedDate);
-    if (isUnavailable) {
-      return res.status(400).json({ error: 'Priest unavailable on this date' });
+    const iso = eventDate.toISOString();
+    if (priest.unavailableDates.some(d => new Date(d).toISOString() === iso)) {
+      return res.status(400).json({ message: 'Priest unavailable on this date' });
     }
 
-    // Explicitly set booking status to "Booked"
-    const booking = new Booking({ 
-      user: userId, 
-      priest: priestId, 
-      event, 
+    const booking = new Booking({
+      user: userId,
+      priest: priestId,
+      event,
       date: eventDate,
       status: 'Booked'
     });
     await booking.save();
 
     res.status(201).json(booking);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
   }
 };
 
+// PUT /api/bookings/:id/cancel
 export const cancelBooking = async (req, res) => {
   try {
-    const { id } = req.params;
-    const booking = await Booking.findById(id);
-    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
 
-    const eventDate = new Date(booking.date);
-    const now = new Date();
-    const diffTime = eventDate - now;
-    const diffDays = diffTime / (1000 * 60 * 60 * 24);
+    // allow cancellation if owner OR admin
+    const isOwner = booking.user.toString() === req.user._id.toString();
+    if (!isOwner && !req.user.isAdmin) {
+      return res.status(403).json({ message: 'Not authorized to cancel this booking' });
+    }
 
+    // your existing 7‑day cutoff logic
+    const diffDays = (booking.date - new Date()) / (1000*60*60*24);
     if (diffDays < 7) {
-      return res.status(400).json({ error: 'Bookings can only be cancelled at least 7 days before the event' });
+      return res
+        .status(400)
+        .json({ message: 'Cancellations must be at least 7 days before the event' });
     }
 
     booking.status = 'Cancelled';
     await booking.save();
-
     res.json(booking);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
   }
 };
 
+// GET /api/bookings/user
 export const getUserBookings = async (req, res) => {
   try {
-    const userId = req.user && req.user.userId ? req.user.userId : '000000000000000000000000';
-    const bookings = await Booking.find({ user: userId }).populate('priest');
+    const bookings = await Booking
+      .find({ user: req.user._id })
+      .populate('priest');
     res.json(bookings);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// GET /api/bookings  (admin only)
+export const getAllBookings = async (req, res) => {
+  try {
+    const bookings = await Booking.find().populate('priest user');
+    res.json(bookings);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
